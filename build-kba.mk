@@ -3,15 +3,20 @@
 COMPILED_BY = $(shell echo "`id -un`@`hostname`")
 PREFIX = /usr/local
 
-DISTRO=$(shell grep -h 'ID=' /etc/*-release|sed 's,ID=,,')
+DISTRO=$(shell grep -h 'ID=' /etc/*-release \
+	   |head -n1 \
+	   |sed 's,ID=,,' \
+	   |sed 's/DISTRIB_Ubuntu/ubuntu/' \
+	   )
 
 FEATURES = huge # big, normal, small tiny
 
 LUA_VERSION = 5.1
-RUBY_VERSION = 2.1
-PERL_VERSION = 5.20
+RUBY_VERSION = 2.3
+PERL_VERSION = 5.22
 PYTHON2_VERSION = 2.7
-PYTHON3_VERSION = 3.4
+PYTHON3_VERSION = 3.5
+JOBS = 2
 
 #=============================================================================#
 #
@@ -64,7 +69,8 @@ CONFIGURE_FLAGS += --with-luajit
 #
 # Perl
 #
-DEBS += libperl5.20
+
+DEBS += libperl$(PERL_VERSION)
 DEBS += libperl-dev
 CONFIGURE_FLAGS += --enable-perlinterp=yes
 #------------------------------------------------------------------------------
@@ -74,8 +80,11 @@ CONFIGURE_FLAGS += --enable-perlinterp=yes
 #
 # Python 2
 #
-# DEBS += libpython$(PYTHON2_VERSION)-dev
+PYTHON2_CONFIG_DIR = $(shell python2 -c \
+					 "import distutils.sysconfig; print(distutils.sysconfig.get_config_var('LIBPL'))")
+DEBS += python-dev
 CONFIGURE_FLAGS += --enable-pythoninterp=yes
+CONFIGURE_FLAGS += --with-python-config-dir=$(PYTHON2_CONFIG_DIR)
 #------------------------------------------------------------------------------
 
 
@@ -83,11 +92,13 @@ CONFIGURE_FLAGS += --enable-pythoninterp=yes
 #
 # Python 3
 #
+PYTHON3_CONFIG_DIR = $(shell python3 -c \
+					 "import distutils.sysconfig; print(distutils.sysconfig.get_config_var('LIBPL'))")
 DEBS += python$(PYTHON3_VERSION)
 DEBS += python$(PYTHON3_VERSION)-dev
 DEBS += python3-dev
 CONFIGURE_FLAGS += --enable-python3interp=dynamic
-CONFIGURE_FLAGS += --with-python3-config-dir=$(shell python3-config --configdir)
+CONFIGURE_FLAGS += --with-python3-config-dir=$(PYTHON3_CONFIG_DIR)
 #------------------------------------------------------------------------------
 
 
@@ -103,9 +114,19 @@ CONFIGURE_FLAGS += "--enable-rubyinterp=yes"
 
 THIS_MAKEFILE = $(lastword $(MAKEFILE_LIST))
 
-build:
+
+help:
+	@echo "Targets"
+	@echo "    build"
+	@echo "    deps"
+	@echo "    full-rebuild"
+	@echo "DISTRO     $(DISTRO)"
+	@echo "PYTHON2_CONFIG_DIR = $(PYTHON2_CONFIG_DIR)"
+	@echo "PYTHON3_CONFIG_DIR = $(PYTHON3_CONFIG_DIR)"
+
+build: help
 	./configure $(CONFIGURE_FLAGS)
-	$(MAKE)
+	cd src && $(MAKE) -j $(JOBS)
 
 deps-ubuntu:
 	sudo apt-get install -y $(DEBS);
@@ -119,7 +140,8 @@ deps-arch:
 	sudo pacman --noconfirm -S $(PAC); \
 
 deps:
-	-$(MAKE) $(THIS_MAKEFILE) deps-$(DISTRO)
+	echo "$(DISTRO)"
+	-$(MAKE) -f $(THIS_MAKEFILE) deps-$(DISTRO)
 
 full-rebuild:
 	$(MAKE) distclean

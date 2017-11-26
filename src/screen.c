@@ -203,7 +203,7 @@ redraw_win_later(
     win_T	*wp,
     int		type)
 {
-    if (wp->w_redr_type < type)
+    if (!exiting && wp->w_redr_type < type)
     {
 	wp->w_redr_type = type;
 	if (type >= NOT_VALID)
@@ -622,8 +622,8 @@ update_screen(int type_arg)
 		    else
 		    {
 			wp->w_redr_type = NOT_VALID;
-			if (W_WINROW(wp) + wp->w_height + W_STATUS_HEIGHT(wp)
-				<= msg_scrolled)
+			if (W_WINROW(wp) + wp->w_height + wp->w_status_height
+							       <= msg_scrolled)
 			    wp->w_redr_status = TRUE;
 		    }
 		}
@@ -2123,7 +2123,11 @@ win_update(win_T *wp)
 
 	    wp->w_lines[idx].wl_lnum = lnum;
 	    wp->w_lines[idx].wl_valid = TRUE;
-	    if (row > wp->w_height)	/* past end of screen */
+
+	    /* Past end of the window or end of the screen. Note that after
+	     * resizing wp->w_height may be end up too big. That's a problem
+	     * elsewhere, but prevent a crash here. */
+	    if (row > wp->w_height || row + wp->w_winrow >= Rows)
 	    {
 		/* we may need the size of that too long line later on */
 		if (dollar_vcol == -1)
@@ -4168,6 +4172,10 @@ win_line(
 		    if (shl != &search_hl && cur != NULL)
 			cur = cur->next;
 		}
+		/* Only highlight one character after the last column. */
+		if (*ptr == NUL && (did_line_attr >= 1
+				    || (wp->w_p_list && lcs_eol_one == -1)))
+		    search_attr = 0;
 	    }
 #endif
 
@@ -5064,7 +5072,9 @@ win_line(
 		    ++did_line_attr;
 
 		    /* don't do search HL for the rest of the line */
-		    if (line_attr != 0 && char_attr == search_attr && col > 0)
+		    if (line_attr != 0 && char_attr == search_attr
+					&& (did_line_attr > 1
+					    || (wp->w_p_list && lcs_eol > 0)))
 			char_attr = line_attr;
 # ifdef FEAT_DIFF
 		    if (diff_hlf == HLF_TXD)
@@ -5320,6 +5330,13 @@ win_line(
 #ifdef FEAT_SEARCH_EXTRA
 			/* highlight 'hlsearch' match at end of line */
 			|| (prevcol_hl_flag == TRUE
+# ifdef FEAT_SYN_HL
+			    && !(wp->w_p_cul && lnum == wp->w_cursor.lnum
+				    && !(wp == curwin && VIsual_active))
+# endif
+# ifdef FEAT_DIFF
+			    && diff_hlf == (hlf_T)0
+# endif
 # if defined(LINE_ATTR)
 			    && did_line_attr <= 1
 # endif
@@ -9490,7 +9507,7 @@ win_ins_lines(
     {
 	wp->w_redr_status = TRUE;
 	redraw_cmdline = TRUE;
-	nextrow = W_WINROW(wp) + wp->w_height + W_STATUS_HEIGHT(wp);
+	nextrow = W_WINROW(wp) + wp->w_height + wp->w_status_height;
 	lastrow = nextrow + line_count;
 	if (lastrow > Rows)
 	    lastrow = Rows;

@@ -13,9 +13,9 @@ FEATURES = huge # big, normal, small tiny
 
 LUA_VERSION = 5.1
 RUBY_VERSION = 2.3
-PERL_VERSION = 5.22
+PERL_VERSION = 5.24
 PYTHON2_VERSION = 2.7
-PYTHON3_VERSION = 3.5
+PYTHON3_VERSION = 3.6
 JOBS = 2
 
 #=============================================================================#

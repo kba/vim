@@ -31,8 +31,7 @@ SCRIPTS_ALL = \
 	test95.out \
 	test99.out \
 	test108.out \
-	test_eval.out \
-	test_wordcount.out
+	test_eval.out
 
 
 # Tests that run on most systems, but not on Amiga.
@@ -73,6 +72,7 @@ NEW_TESTS = test_arabic.res \
 	    test_assert.res \
 	    test_autochdir.res \
 	    test_autocmd.res \
+	    test_autoload.res \
 	    test_backspace_opt.res \
 	    test_breakindent.res \
 	    test_bufwintabinfo.res \
@@ -94,6 +94,7 @@ NEW_TESTS = test_arabic.res \
 	    test_edit.res \
 	    test_erasebackword.res \
 	    test_escaped_glob.res \
+	    test_eval_stuff.res \
 	    test_exec_while_if.res \
 	    test_exists.res \
 	    test_exists_autocmd.res \
@@ -182,6 +183,7 @@ NEW_TESTS = test_arabic.res \
 	    test_winbuf_close.res \
 	    test_window_id.res \
 	    test_windows_home.res \
+	    test_wordcount.res \
 	    test_writefile.res \
 	    test_alot_latin.res \
 	    test_alot_utf8.res \

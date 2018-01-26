@@ -38,8 +38,11 @@
  * in tl_scrollback are no longer used.
  *
  * TODO:
+ * - When using 'termguicolors' still use the 16 ANSI colors as-is.  Helps for
+ *   a job that uses 16 colors while Vim is using > 256.
  * - in GUI vertical split causes problems.  Cursor is flickering. (Hirohito
  *   Higashi, 2017 Sep 19)
+ * - Trigger TerminalOpen event?  #2422  patch in #2484
  * - Shift-Tab does not work.
  * - after resizing windows overlap. (Boris Staletic, #2164)
  * - Redirecting output does not work on MS-Windows, Test_terminal_redir_file()
@@ -48,7 +51,6 @@
  * - When closing gvim with an active terminal buffer, the dialog suggests
  *   saving the buffer.  Should say something else. (Manas Thakur, #2215)
  *   Also: #2223
- * - implement term_setsize()
  * - Termdebug does not work when Vim build with mzscheme.  gdb hangs.
  * - MS-Windows GUI: WinBar has  tearoff item
  * - Adding WinBar to terminal window doesn't display, text isn't shifted down.
@@ -57,9 +59,12 @@
  * - What to store in a session file?  Shell at the prompt would be OK to
  *   restore, but others may not.  Open the window and let the user start the
  *   command?
+ * - implement term_setsize()
  * - add test for giving error for invalid 'termsize' value.
  * - support minimal size when 'termsize' is "rows*cols".
  * - support minimal size when 'termsize' is empty?
+ * - if the job in the terminal does not support the mouse, we can use the
+ *   mouse in the Terminal window for copy/paste and scrolling.
  * - GUI: when using tabs, focus in terminal, click on tab does not work.
  * - GUI: when 'confirm' is set and trying to exit Vim, dialog offers to save
  *   changes to "!shell".
@@ -67,8 +72,6 @@
  * - Redrawing is slow with Athena and Motif.  Also other GUI? (Ramel Eshed)
  * - For the GUI fill termios with default values, perhaps like pangoterm:
  *   http://bazaar.launchpad.net/~leonerd/pangoterm/trunk/view/head:/main.c#L134
- * - if the job in the terminal does not support the mouse, we can use the
- *   mouse in the Terminal window for copy/paste.
  * - when 'encoding' is not utf-8, or the job is using another encoding, setup
  *   conversions.
  * - In the GUI use a terminal emulator for :!cmd.  Make the height the same as
@@ -186,6 +189,9 @@ static void term_free_vterm(term_T *term);
  * backspace key. */
 static int term_backspace_char = BS;
 
+/* "Terminal" highlight group colors. */
+static int term_default_cterm_fg = -1;
+static int term_default_cterm_bg = -1;
 
 /**************************************
  * 1. Generic code for all systems.
@@ -670,7 +676,10 @@ update_cursor(term_T *term, int redraw)
 	out_flush();
 #ifdef FEAT_GUI
 	if (gui.in_use)
+	{
 	    gui_update_cursor(FALSE, FALSE);
+	    gui_mch_flush();
+	}
 #endif
     }
 }
@@ -1303,12 +1312,13 @@ send_keys_to_term(term_T *term, int c, int typed)
 	case K_MOUSELEFT:
 	case K_MOUSERIGHT:
 	    if (mouse_row < W_WINROW(curwin)
-		    || mouse_row > (W_WINROW(curwin) + curwin->w_height)
+		    || mouse_row >= (W_WINROW(curwin) + curwin->w_height)
 		    || mouse_col < curwin->w_wincol
-		    || mouse_col > W_ENDCOL(curwin)
+		    || mouse_col >= W_ENDCOL(curwin)
 		    || dragging_outside)
 	    {
-		/* click or scroll outside the current window */
+		/* click or scroll outside the current window or on status line
+		 * or vertical separator */
 		if (typed)
 		{
 		    stuffcharReadbuff(c);
@@ -1707,7 +1717,7 @@ may_toggle_cursor(term_T *term)
 
 /*
  * Reverse engineer the RGB value into a cterm color index.
- * First color is 1.  Return 0 if no match found.
+ * First color is 1.  Return 0 if no match found (default color).
  */
     static int
 color2index(VTermColor *color, int fg, int *boldp)
@@ -1716,78 +1726,34 @@ color2index(VTermColor *color, int fg, int *boldp)
     int blue = color->blue;
     int green = color->green;
 
-    /* The argument for lookup_color() is for the color_names[] table. */
-    if (red == 0)
+    if (color->ansi_index != VTERM_ANSI_INDEX_NONE)
     {
-	if (green == 0)
+	/* First 16 colors and default: use the ANSI index, because these
+	 * colors can be redefined. */
+	if (t_colors >= 16)
+	    return color->ansi_index;
+	switch (color->ansi_index)
 	{
-	    if (blue == 0)
-		return lookup_color(0, fg, boldp) + 1; /* black */
-	    if (blue == 224)
-		return lookup_color(1, fg, boldp) + 1; /* dark blue */
-	}
-	else if (green == 224)
-	{
-	    if (blue == 0)
-		return lookup_color(2, fg, boldp) + 1; /* dark green */
-	    if (blue == 224)
-		return lookup_color(3, fg, boldp) + 1; /* dark cyan */
+	    case  0: return 0;
+	    case  1: return lookup_color( 0, fg, boldp) + 1;
+	    case  2: return lookup_color( 4, fg, boldp) + 1; /* dark red */
+	    case  3: return lookup_color( 2, fg, boldp) + 1; /* dark green */
+	    case  4: return lookup_color( 6, fg, boldp) + 1; /* brown */
+	    case  5: return lookup_color( 1, fg, boldp) + 1; /* dark blue*/
+	    case  6: return lookup_color( 5, fg, boldp) + 1; /* dark magenta */
+	    case  7: return lookup_color( 3, fg, boldp) + 1; /* dark cyan */
+	    case  8: return lookup_color( 8, fg, boldp) + 1; /* light grey */
+	    case  9: return lookup_color(12, fg, boldp) + 1; /* dark grey */
+	    case 10: return lookup_color(20, fg, boldp) + 1; /* red */
+	    case 11: return lookup_color(16, fg, boldp) + 1; /* green */
+	    case 12: return lookup_color(24, fg, boldp) + 1; /* yellow */
+	    case 13: return lookup_color(14, fg, boldp) + 1; /* blue */
+	    case 14: return lookup_color(22, fg, boldp) + 1; /* magenta */
+	    case 15: return lookup_color(18, fg, boldp) + 1; /* cyan */
+	    case 16: return lookup_color(26, fg, boldp) + 1; /* white */
 	}
     }
-    else if (red == 224)
-    {
-	if (green == 0)
-	{
-	    if (blue == 0)
-		return lookup_color(4, fg, boldp) + 1; /* dark red */
-	    if (blue == 224)
-		return lookup_color(5, fg, boldp) + 1; /* dark magenta */
-	}
-	else if (green == 224)
-	{
-	    if (blue == 0)
-		return lookup_color(6, fg, boldp) + 1; /* dark yellow / brown */
-	    if (blue == 224)
-		return lookup_color(8, fg, boldp) + 1; /* white / light grey */
-	}
-    }
-    else if (red == 128)
-    {
-	if (green == 128 && blue == 128)
-	    return lookup_color(12, fg, boldp) + 1; /* dark grey */
-    }
-    else if (red == 255)
-    {
-	if (green == 64)
-	{
-	    if (blue == 64)
-		return lookup_color(20, fg, boldp) + 1;  /* light red */
-	    if (blue == 255)
-		return lookup_color(22, fg, boldp) + 1;  /* light magenta */
-	}
-	else if (green == 255)
-	{
-	    if (blue == 64)
-		return lookup_color(24, fg, boldp) + 1;  /* yellow */
-	    if (blue == 255)
-		return lookup_color(26, fg, boldp) + 1;  /* white */
-	}
-    }
-    else if (red == 64)
-    {
-	if (green == 64)
-	{
-	    if (blue == 255)
-		return lookup_color(14, fg, boldp) + 1;  /* light blue */
-	}
-	else if (green == 255)
-	{
-	    if (blue == 64)
-		return lookup_color(16, fg, boldp) + 1;  /* light green */
-	    if (blue == 255)
-		return lookup_color(18, fg, boldp) + 1;  /* light cyan */
-	}
-    }
+
     if (t_colors >= 256)
     {
 	if (red == blue && red == green)
@@ -1874,6 +1840,15 @@ cell2attr(VTermScreenCellAttrs cellattrs, VTermColor cellfg, VTermColor cellbg)
 	int bold = MAYBE;
 	int fg = color2index(&cellfg, TRUE, &bold);
 	int bg = color2index(&cellbg, FALSE, &bold);
+
+	/* Use the "Terminal" highlighting for the default colors. */
+	if ((fg == 0 || bg == 0) && t_colors >= 16)
+	{
+	    if (fg == 0 && term_default_cterm_fg >= 0)
+		fg = term_default_cterm_fg + 1;
+	    if (bg == 0 && term_default_cterm_bg >= 0)
+		bg = term_default_cterm_bg + 1;
+	}
 
 	/* with 8 colors set the bold attribute to get a bright foreground */
 	if (bold == TRUE)
@@ -2447,23 +2422,23 @@ term_get_attr(buf_T *buf, linenr_T lnum, int col)
 }
 
 static VTermColor ansi_table[16] = {
-  {  0,   0,   0}, /* black */
-  {224,   0,   0}, /* dark red */
-  {  0, 224,   0}, /* dark green */
-  {224, 224,   0}, /* dark yellow / brown */
-  {  0,   0, 224}, /* dark blue */
-  {224,   0, 224}, /* dark magenta */
-  {  0, 224, 224}, /* dark cyan */
-  {224, 224, 224}, /* light grey */
+  {  0,   0,   0,  1}, /* black */
+  {224,   0,   0,  2}, /* dark red */
+  {  0, 224,   0,  3}, /* dark green */
+  {224, 224,   0,  4}, /* dark yellow / brown */
+  {  0,   0, 224,  5}, /* dark blue */
+  {224,   0, 224,  6}, /* dark magenta */
+  {  0, 224, 224,  7}, /* dark cyan */
+  {224, 224, 224,  8}, /* light grey */
 
-  {128, 128, 128}, /* dark grey */
-  {255,  64,  64}, /* light red */
-  { 64, 255,  64}, /* light green */
-  {255, 255,  64}, /* yellow */
-  { 64,  64, 255}, /* light blue */
-  {255,  64, 255}, /* light magenta */
-  { 64, 255, 255}, /* light cyan */
-  {255, 255, 255}, /* white */
+  {128, 128, 128,  9}, /* dark grey */
+  {255,  64,  64, 10}, /* light red */
+  { 64, 255,  64, 11}, /* light green */
+  {255, 255,  64, 12}, /* yellow */
+  { 64,  64, 255, 13}, /* light blue */
+  {255,  64, 255, 14}, /* light magenta */
+  { 64, 255, 255, 15}, /* light cyan */
+  {255, 255, 255, 16}, /* white */
 };
 
 static int cube_value[] = {
@@ -2495,6 +2470,7 @@ cterm_color2rgb(int nr, VTermColor *rgb)
 	rgb->blue  = cube_value[idx      % 6];
 	rgb->green = cube_value[idx / 6  % 6];
 	rgb->red   = cube_value[idx / 36 % 6];
+	rgb->ansi_index = VTERM_ANSI_INDEX_NONE;
     }
     else if (nr < 256)
     {
@@ -2503,6 +2479,7 @@ cterm_color2rgb(int nr, VTermColor *rgb)
 	rgb->blue  = grey_ramp[idx];
 	rgb->green = grey_ramp[idx];
 	rgb->red   = grey_ramp[idx];
+	rgb->ansi_index = VTERM_ANSI_INDEX_NONE;
     }
 }
 
@@ -2545,11 +2522,12 @@ create_vterm(term_T *term, int rows, int cols)
     }
     fg->red = fg->green = fg->blue = fgval;
     bg->red = bg->green = bg->blue = bgval;
+    fg->ansi_index = bg->ansi_index = VTERM_ANSI_INDEX_DEFAULT;
 
     /* The "Terminal" highlight group overrules the defaults. */
     id = syn_name2id((char_u *)"Terminal");
 
-    /* Use the actual color for the GUI and when 'guitermcolors' is set. */
+    /* Use the actual color for the GUI and when 'termguicolors' is set. */
 #if defined(FEAT_GUI) || defined(FEAT_TERMGUICOLORS)
     if (0
 # ifdef FEAT_GUI
@@ -2607,13 +2585,10 @@ create_vterm(term_T *term, int rows, int cols)
 #endif
     if (id != 0 && t_colors >= 16)
     {
-	int cterm_fg, cterm_bg;
-
-	syn_id2cterm_bg(id, &cterm_fg, &cterm_bg);
-	if (cterm_fg >= 0)
-	    cterm_color2rgb(cterm_fg, fg);
-	if (cterm_bg >= 0)
-	    cterm_color2rgb(cterm_bg, bg);
+	if (term_default_cterm_fg >= 0)
+	    cterm_color2rgb(term_default_cterm_fg, fg);
+	if (term_default_cterm_bg >= 0)
+	    cterm_color2rgb(term_default_cterm_bg, bg);
     }
     else
     {
@@ -2727,6 +2702,16 @@ set_ref_in_term(int copyID)
 	    abort = abort || set_ref_in_item(&tv, copyID, NULL, NULL);
 	}
     return abort;
+}
+
+/*
+ * Cache "Terminal" highlight group colors.
+ */
+    void
+set_terminal_default_colors(int cterm_fg, int cterm_bg)
+{
+    term_default_cterm_fg = cterm_fg - 1;
+    term_default_cterm_bg = cterm_bg - 1;
 }
 
 /*
@@ -3401,31 +3386,39 @@ term_and_job_init(
     HANDLE	    jo = NULL;
     HANDLE	    child_process_handle;
     HANDLE	    child_thread_handle;
-    void	    *winpty_err;
+    void	    *winpty_err = NULL;
     void	    *spawn_config = NULL;
     garray_T	    ga_cmd, ga_env;
-    char_u	    *cmd;
+    char_u	    *cmd = NULL;
 
     if (dyn_winpty_init(TRUE) == FAIL)
 	return FAIL;
+    ga_init2(&ga_cmd, (int)sizeof(char*), 20);
+    ga_init2(&ga_env, (int)sizeof(char*), 20);
 
     if (argvar->v_type == VAR_STRING)
-	cmd = argvar->vval.v_string;
-    else
     {
-	ga_init2(&ga_cmd, (int)sizeof(char*), 20);
+	cmd = argvar->vval.v_string;
+    }
+    else if (argvar->v_type == VAR_LIST)
+    {
 	if (win32_build_cmd(argvar->vval.v_list, &ga_cmd) == FAIL)
 	    goto failed;
 	cmd = ga_cmd.ga_data;
     }
+    if (cmd == NULL || *cmd == NUL)
+    {
+	EMSG(_(e_invarg));
+	goto failed;
+    }
 
     cmd_wchar = enc_to_utf16(cmd, NULL);
+    ga_clear(&ga_cmd);
     if (cmd_wchar == NULL)
-	return FAIL;
+	goto failed;
     if (opt->jo_cwd != NULL)
 	cwd_wchar = enc_to_utf16(opt->jo_cwd, NULL);
 
-    ga_init2(&ga_env, (int)sizeof(char*), 20);
     win32_build_env(opt->jo_env, &ga_env, TRUE);
     env_wchar = ga_env.ga_data;
 
@@ -3506,6 +3499,7 @@ term_and_job_init(
     winpty_spawn_config_free(spawn_config);
     vim_free(cmd_wchar);
     vim_free(cwd_wchar);
+    vim_free(env_wchar);
 
     create_vterm(term, term->tl_rows, term->tl_cols);
 
@@ -3527,9 +3521,8 @@ term_and_job_init(
     return OK;
 
 failed:
-    if (argvar->v_type == VAR_LIST)
-	vim_free(ga_cmd.ga_data);
-    vim_free(ga_env.ga_data);
+    ga_clear(&ga_cmd);
+    ga_clear(&ga_env);
     vim_free(cmd_wchar);
     vim_free(cwd_wchar);
     if (spawn_config != NULL)

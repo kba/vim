@@ -11,11 +11,17 @@ DISTRO=$(shell grep -h 'ID=' /etc/*-release \
 
 FEATURES = huge # big, normal, small tiny
 
+# Lua version
 LUA_VERSION = 5.1
+# Ruby version
 RUBY_VERSION = 2.3
-PERL_VERSION = 5.24
+# Perl version
+PERL_VERSION = 5.26
+# Python2 version
 PYTHON2_VERSION = 2.7
+# Python3 version
 PYTHON3_VERSION = 3.6
+# Concurrent make jobs
 JOBS = 2
 
 #=============================================================================#
@@ -115,15 +121,27 @@ CONFIGURE_FLAGS += "--enable-rubyinterp=yes"
 THIS_MAKEFILE = $(lastword $(MAKEFILE_LIST))
 
 
-help:
-	@echo "Targets"
-	@echo "    build"
-	@echo "    deps"
-	@echo "    full-rebuild"
-	@echo "DISTRO     $(DISTRO)"
-	@echo "PYTHON2_CONFIG_DIR = $(PYTHON2_CONFIG_DIR)"
-	@echo "PYTHON3_CONFIG_DIR = $(PYTHON3_CONFIG_DIR)"
+# BEGIN-EVAL makefile-parser --make-help build-kba.mk
 
+help:
+	@echo ""
+	@echo "  Targets"
+	@echo ""
+	@echo "    build         configure and build but not install"
+	@echo "    full-rebuild  clean, build, install"
+	@echo ""
+	@echo "  Variables"
+	@echo ""
+	@echo "    LUA_VERSION      Lua version"
+	@echo "    RUBY_VERSION     Ruby version"
+	@echo "    PERL_VERSION     Perl version"
+	@echo "    PYTHON2_VERSION  Python2 version"
+	@echo "    PYTHON3_VERSION  Python3 version"
+	@echo "    JOBS             Concurrent make jobs"
+
+# END-EVAL
+
+# configure and build but not install
 build: help
 	./configure $(CONFIGURE_FLAGS)
 	cd src && $(MAKE) -j $(JOBS)
@@ -139,11 +157,13 @@ deps-debian:
 deps-arch:
 	sudo pacman --noconfirm -S $(PAC); \
 
+# install dependencies
 deps:
 	echo "$(DISTRO)"
 	-$(MAKE) -f $(THIS_MAKEFILE) deps-$(DISTRO)
 
+# clean, build, install
 full-rebuild:
 	$(MAKE) distclean
-	$(MAKE)
+	$(MAKE) -f $(THIS_MAKEFILE) build
 	sudo $(MAKE) install

@@ -98,13 +98,13 @@ CONFIGURE_FLAGS += --with-python-config-dir=$(PYTHON2_CONFIG_DIR)
 #
 # Python 3
 #
-PYTHON3_CONFIG_DIR = $(shell python3 -c \
-					 "import distutils.sysconfig; print(distutils.sysconfig.get_config_var('LIBPL'))")
-DEBS += python$(PYTHON3_VERSION)
-DEBS += python$(PYTHON3_VERSION)-dev
-DEBS += python3-dev
-CONFIGURE_FLAGS += --enable-python3interp=dynamic
-CONFIGURE_FLAGS += --with-python3-config-dir=$(PYTHON3_CONFIG_DIR)
+# PYTHON3_CONFIG_DIR = $(shell python3 -c \
+#                      "import distutils.sysconfig; print(distutils.sysconfig.get_config_var('LIBPL'))")
+# DEBS += python$(PYTHON3_VERSION)
+# DEBS += python$(PYTHON3_VERSION)-dev
+# DEBS += python3-dev
+# CONFIGURE_FLAGS += --enable-python3interp=dynamic
+# CONFIGURE_FLAGS += --with-python3-config-dir=$(PYTHON3_CONFIG_DIR)
 #------------------------------------------------------------------------------
 
 
